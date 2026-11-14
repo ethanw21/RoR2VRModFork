@@ -18,7 +18,8 @@ namespace VRMod
 
         private static Vector3 abilityDirection = Vector3.zero;
 
-        private static List<Type> nonDominantHandStateTypes = new List<Type>()
+        // HashSet: looked up on every aim ray request by the local player's skill states.
+        private static HashSet<Type> nonDominantHandStateTypes = new HashSet<Type>()
         {
             typeof(EntityStates.Commando.CommandoWeapon.FireFMJ),
             typeof(EntityStates.Bandit2.Weapon.Bandit2FireShiv),
@@ -928,11 +929,17 @@ namespace VRMod
             {
                 extraRaycastDistance = 0;
 
-                StackTrace stackTrace = new StackTrace();
-                Type callerType = stackTrace.GetFrame(2).GetMethod().DeclaringType;
+                // Performance: this runs every time the game asks for the local player's
+                // camera-adjusted aim ray (the interaction check does so continuously). The old
+                // "new StackTrace()" captured the ENTIRE call stack, one stack walk per frame of
+                // depth, only to read frame 2. A single StackFrame(2) reads exactly the same frame
+                // (the caller of ModifyAimRayIfApplicable, past the hook trampoline) with one walk
+                // and no file info.
+                System.Reflection.MethodBase callerMethod = new StackFrame(2, false).GetMethod();
+                Type callerType = callerMethod != null ? callerMethod.DeclaringType : null;
 
                 bool useLeftHand;
-                if (forceAimRaySideTypes.TryGetValue(callerType, out useLeftHand))
+                if (callerType != null && forceAimRaySideTypes.TryGetValue(callerType, out useLeftHand))
                 {
                     return GetHandBySide(useLeftHand).aimRay;
                 }
@@ -1016,11 +1023,28 @@ namespace VRMod
             return System.Array.IndexOf(RuntimeHands.KnownRuntimeHandBodies, bodyName) >= 0;
         }
 
+        // Performance: Object.name allocates a new string on every read, and EditAimray runs for
+        // every aim ray request. The two name-based facts about the local body are worked out once
+        // per body instance instead.
+        private static CharacterBody aimRayFlagsBody;
+        private static bool aimRayBodyIsMULT;
+        private static bool aimRayBodyIsRuntimeHand;
+
+        private static void RefreshAimRayBodyFlags(CharacterBody body)
+        {
+            if (ReferenceEquals(aimRayFlagsBody, body)) return;
+
+            aimRayFlagsBody = body;
+            aimRayBodyIsMULT = body.name.Contains("ToolbotBody");
+            aimRayBodyIsRuntimeHand = IsRuntimeHandBody(body);
+        }
+
         private static Ray EditAimray(On.EntityStates.BaseState.orig_GetAimRay orig, EntityStates.BaseState self)
         {
             if (self.characterBody.IsLocalBody())
             {
-                bool isMULT = self.characterBody.name.Contains("ToolbotBody");
+                RefreshAimRayBodyFlags(self.characterBody);
+                bool isMULT = aimRayBodyIsMULT;
 
                 // 2.24.11: Enforcer's riot shotgun aims from the hand that holds it (left unless mirrored),
                 // not from the dominant hand's muzzle (which is the shield hand by default).
@@ -1034,7 +1058,7 @@ namespace VRMod
                 // Enforcer) always aim with the DOMINANT hand's aim ray - right hand when right-handed, left
                 // hand when left-handed - wherever the model holds its weapon. (Enforcer's shotgun is in the
                 // dominant hand, handled above.) Replaces 2.24.27's "weapon hand when left-handed".
-                if (IsRuntimeHandBody(self.characterBody))
+                if (aimRayBodyIsRuntimeHand)
                 {
                     HandController dom = GetHandByDominance(true);
                     if (dom) return dom.aimRay;

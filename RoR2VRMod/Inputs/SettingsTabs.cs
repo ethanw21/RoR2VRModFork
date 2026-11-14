@@ -39,6 +39,12 @@ namespace VRMod
 
             if (!leftEdge && !rightEdge) return;
 
+            // Performance: during a run the settings panel can only be reached through the pause
+            // menu, and the grips are Utility / Special. Without this check every grip squeeze in
+            // combat ran two whole-scene FindObjectsOfType scans (tens of ms on a busy stage) just
+            // to find out that no settings panel is open.
+            if (RoR2.Run.instance && !Utils.IsPauseMenuOpen) return;
+
             try
             {
                 HGHeaderNavigationController tabs = FindActiveTabs();
