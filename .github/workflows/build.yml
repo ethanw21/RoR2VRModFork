@@ -50,7 +50,7 @@ jobs:
 
       # The downloaded artifact is a zip of the package folder, so it can be imported as it is
       # with the mod manager's "Import local mod".
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: ${{ steps.package.outputs.name }}
           path: dist/package/

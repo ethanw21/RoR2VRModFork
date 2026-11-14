@@ -64,7 +64,7 @@ new DLLs into the latest published Thunderstore package. The run's artifact is a
 Details, and what to change after a game update: `build-tools/ci/README.md`.
 
 This is the quickest way to find out whether a change compiles when the `/root/build` toolchain
-below is not available: push the branch, open a pull request, read the Build check.
+above is not available: push the branch, open a pull request, read the Build check.
 
 ## Version release checklist
 

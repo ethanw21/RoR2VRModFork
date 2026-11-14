@@ -24,6 +24,11 @@ git). `package.sh` then takes the published package, puts the newly built `VRMod
 `manifest.json`, `README.md`, `CHANGELOG.md` and `icon.png`. Every other file in the artifact is
 byte for byte the one from the published package.
 
+The Package step also compares each new DLL with the published one: which libraries it references
+and which files it embeds (version numbers and the base class library are left out, see the last
+section). A difference shows up as a warning on the run. It is expected when a change adds or
+removes a dependency on purpose, and a red flag when it does not.
+
 ## Things to change now and then
 
 - **Game update:** set `GameLibsVersion` and `MMHookVersion` in `Directory.Build.props` to the
@@ -48,6 +53,14 @@ The package is then in `dist/package/`.
 ## How this differs from the hand-driven build
 
 The `*.ps1` / `ubuild.py` scripts one folder up compile against a real copy of the game's
-`Managed` folder. This build compiles against stripped reference assemblies instead, and targets
-.NET Standard 2.1 (as DrBibop's original project files did). The resulting DLLs are not
-byte-identical to a hand-driven build, so test an artifact in the game before publishing it.
+`Managed` folder. This build compiles against stripped reference assemblies instead, so the DLLs
+are not byte-identical to a hand-driven build. Checked against the published 1.1.1 DLLs, the
+differences in what they reference are:
+
+- `netstandard 2.1` in place of `mscorlib`, `System` and `System.Core` 4.0 (the game provides
+  both; .NET Standard 2.1 is what DrBibop's original project files targeted).
+- Version numbers recorded for BepInEx, MonoMod and Mono.Cecil, which come from the
+  `BepInEx.Core` NuGet package here. These libraries are loaded by name at runtime.
+
+Every other referenced library and every embedded file is the same. Test an artifact in the game
+before publishing it.
