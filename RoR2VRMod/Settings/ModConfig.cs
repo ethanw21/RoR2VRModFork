@@ -53,6 +53,10 @@ namespace VRMod
         internal static ConfigEntry<bool> WristChatNoFade { get; private set; }
         internal static ConfigEntry<bool> ReduceEffectsUnderLoad { get; private set; }
         internal static ConfigEntry<bool> ReduceSoundsUnderLoad { get; private set; }
+        internal static ConfigEntry<float> RenderScale { get; private set; }
+        internal static ConfigEntry<bool> PerformanceLog { get; private set; }
+        internal static ConfigEntry<bool> SinglePassInstanced { get; private set; }
+        internal static ConfigEntry<bool> DecalListCleanup { get; private set; }
         internal static ConfigEntry<float> BottomAnchor { get; private set; }
         internal static ConfigEntry<float> TopAnchor { get; private set; }
         internal static ConfigEntry<float> LeftAnchor { get; private set; }
@@ -584,6 +588,30 @@ namespace VRMod
                 false,
                 "When the same sound is triggered many times at once (big fights, lots of item procs), only the first couple of copies are played instead of stacking dozens on top of each other. Local only - other players are not affected."
             );
+            RenderScale = configFile.Bind<float>(
+                "Performance",
+                "VR render scale",
+                1f,
+                "Multiplies the resolution the headset runtime asks the game to render at. Below 1 renders fewer pixels (faster, softer image); above 1 supersamples (slower, sharper). 1 leaves the runtime's resolution untouched. Range 0.5 to 1.5. The change applies about a second after the slider stops moving and causes one short hitch while the eye textures are rebuilt. Visual only."
+            );
+            PerformanceLog = configFile.Bind<bool>(
+                "Performance",
+                "Log frame times",
+                false,
+                "Writes a line to the BepInEx log every 5 seconds with the average and worst frame time, the number of slow frames and the number of garbage collections in that window. For comparing builds and settings; leave off for normal play."
+            );
+            SinglePassInstanced = configFile.Bind<bool>(
+                "Performance",
+                "Experimental single-pass instanced rendering",
+                false,
+                "EXPERIMENT - expect it to break. Asks OpenXR to draw both eyes in one pass instead of rendering the whole scene once per eye, which would roughly halve the CPU cost of rendering. The game was built for flat screens, so its shaders and post-processing may show in one eye only, or not at all. Takes effect after a restart. If the picture is wrong, set this back to false in this file (or in the mod manager's config editor) and restart."
+            );
+            DecalListCleanup = configFile.Bind<bool>(
+                "Performance",
+                "Clear decal lists each frame",
+                true,
+                "Decals (scorch marks, ground effects) that are no longer in view are dropped from the draw list after both eyes have rendered, instead of being drawn for the rest of the stage. Turn this off only if decals start showing in one eye only."
+            );
             BottomAnchor = configFile.Bind<float>(
                 "HUD Settings",
                 "Bottom anchor",
@@ -686,6 +714,8 @@ namespace VRMod
             settings.Add("vr_item_hints", new ConfigSetting(ItemHints, ConfigSetting.SettingUpdate.Instant));
             settings.Add("vr_reduce_effects", new ConfigSetting(ReduceEffectsUnderLoad, ConfigSetting.SettingUpdate.Instant));
             settings.Add("vr_reduce_sounds", new ConfigSetting(ReduceSoundsUnderLoad, ConfigSetting.SettingUpdate.Instant));
+            settings.Add("vr_render_scale", new ConfigSetting(RenderScale, RenderScaleController.MinScale, RenderScaleController.MaxScale, ConfigSetting.SettingUpdate.Instant, RenderScaleController.OnSettingChanged));
+            settings.Add("vr_performance_log", new ConfigSetting(PerformanceLog, ConfigSetting.SettingUpdate.Instant));
             settings.Add("vr_snap_turn", new ConfigSetting(SnapTurn, ConfigSetting.SettingUpdate.Instant));
             settings.Add("vr_snap_angle", new ConfigSetting(SnapTurnAngle, 30, 180, ConfigSetting.SettingUpdate.Instant));
             settings.Add("vr_snap_delay", new ConfigSetting(SnapTurnHoldDelay, 0.2f, 1, ConfigSetting.SettingUpdate.Instant));
