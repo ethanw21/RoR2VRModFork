@@ -86,6 +86,11 @@ namespace VRMod
                         }
                     }
                 }
+
+                // Performance: a canvas shrunk to nothing still rebuilds and submits its geometry.
+                // Switch the canvas off while it is fully hidden and back on as it starts to grow.
+                bool canvasVisible = scaleLerp > 0f;
+                if (canvas.enabled != canvasVisible) canvas.enabled = canvasVisible;
             }
         }
     }

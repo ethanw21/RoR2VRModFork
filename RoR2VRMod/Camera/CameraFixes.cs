@@ -27,6 +27,7 @@ namespace VRMod
         private static float timeSinceLastSnapTurn = 0f;
 
         private static int lastFrameCount = -1;
+        private static ThreeEyedGames.DecaliciousRenderer lastDecalRenderer;
 
         private static GameObject spectatorCamera;
         private static GameObject spectatorScreen;
@@ -40,6 +41,7 @@ namespace VRMod
         private static float cachedColliderHeight;
         private static float cachedViewScale = 1f;
         private static bool reanchorRequested;
+        private static float nextViewAnchorCheck;
 
         /// <summary>2.23.29: forms that keep the same body and capsule (Acolyte's Reaper) ask for a re-anchor.</summary>
         internal static void RequestReanchor(string why)
@@ -376,14 +378,31 @@ namespace VRMod
 
             c.EmitDelegate<Func<ThreeEyedGames.DecaliciousRenderer, bool>>((self) =>
             {
+                // Returning true lets the decal renderer clear its per-frame decal lists; false
+                // skips the clear. Decals register themselves once per frame (at culling), but in
+                // multi-pass this method runs once per EYE - so the lists must survive the first
+                // eye and be cleared after the second, or the second eye draws no decals.
                 if (self._camera.stereoTargetEye == StereoTargetEyeMask.None) return true;
 
-                bool result = lastFrameCount == Time.renderedFrameCount;
-                if (result)
-                {
-                    lastFrameCount = Time.renderedFrameCount;
-                }
-                return result;
+                // Single-pass draws both eyes in one call, so every call is the last of its frame.
+                if (VRMod.SinglePassActive) return true;
+
+                // Old behaviour, kept as an escape hatch: never clear (see below).
+                if (!ModConfig.DecalListCleanup.Value) return false;
+
+                // Performance: the previous check only stored the frame number INSIDE the branch
+                // that required it to be stored already, so it never became true and the lists
+                // were never cleared for the headset camera - every decal the camera had seen
+                // stayed in the draw list (destroyed, pooled or behind the player) until the
+                // camera was rebuilt. Now: the second call for the same renderer in the same
+                // rendered frame is the second eye, and that one clears.
+                int frame = Time.renderedFrameCount;
+                bool secondEye = lastFrameCount == frame && ReferenceEquals(lastDecalRenderer, self);
+
+                lastFrameCount = secondEye ? -1 : frame;
+                lastDecalRenderer = self;
+
+                return secondEye;
             });
 
             int lastIndex = c.Index;
@@ -712,30 +731,84 @@ namespace VRMod
 
             if (cachedBody)
             {
-                Renderer[] renderers = cachedBody.modelLocator?.modelTransform?.gameObject.GetComponentsInChildren<Renderer>();
+                Transform modelTransform = cachedBody.modelLocator ? cachedBody.modelLocator.modelTransform : null;
 
-                if (forcedVisibleRenderers != null)
+                if (modelTransform)
                 {
-                    string currentBodyName = cachedBody.name.Substring(0, cachedBody.name.IndexOf("(Clone)"));
+                    // Performance: this runs every frame of a run. It used to allocate a new
+                    // renderer array each time and, when another mod had registered renderers to
+                    // keep visible, also a substring and two LINQ arrays. The scan itself has to
+                    // stay per-frame (a body part the game re-activates must not flash into
+                    // view), so it now fills one reusable list and the name matching is done
+                    // once per renderer instead of once per frame.
+                    modelTransform.GetComponentsInChildren<Renderer>(false, bodyRendererBuffer);
 
-                    ForcedVisibleRenderer[] visibleBodyRenderers = forcedVisibleRenderers.Where(x => x.bodyName == currentBodyName).ToArray();
+                    bool anyForcedVisible = RefreshForcedVisibleNames(cachedBody);
 
-                    renderers = renderers.Where(x => !Array.Exists(visibleBodyRenderers, vren => vren.rendererObjectName == x.gameObject.name)).ToArray();
-                }
-                
-                if (renderers != null)
-                {
-                    foreach (Renderer renderer in renderers)
+                    for (int i = 0; i < bodyRendererBuffer.Count; i++)
                     {
+                        Renderer renderer = bodyRendererBuffer[i];
+
+                        if (anyForcedVisible)
+                        {
+                            if (forcedVisibleKept.Contains(renderer)) continue;
+
+                            if (forcedVisibleNamesForBody.Contains(renderer.gameObject.name))
+                            {
+                                forcedVisibleKept.Add(renderer);
+                                continue;
+                            }
+                        }
+
                         if (renderer.gameObject.activeSelf)
                         {
                             renderer.gameObject.SetActive(false);
                         }
                     }
+
+                    bodyRendererBuffer.Clear();
                 }
             }
 
             orig(self);
+        }
+
+        private static readonly List<Renderer> bodyRendererBuffer = new List<Renderer>();
+        private static readonly List<string> forcedVisibleNamesForBody = new List<string>();
+        private static readonly HashSet<Renderer> forcedVisibleKept = new HashSet<Renderer>();
+        private static CharacterBody forcedVisibleBody;
+        private static int forcedVisibleRegisteredCount = -1;
+
+        /// <summary>
+        /// Rebuilds the list of renderer object names that must stay visible on this body, when
+        /// the body or the registered list changed. Returns whether there are any.
+        /// </summary>
+        private static bool RefreshForcedVisibleNames(CharacterBody body)
+        {
+            int registered = forcedVisibleRenderers != null ? forcedVisibleRenderers.Count : 0;
+
+            if (!ReferenceEquals(forcedVisibleBody, body) || registered != forcedVisibleRegisteredCount)
+            {
+                forcedVisibleBody = body;
+                forcedVisibleRegisteredCount = registered;
+                forcedVisibleNamesForBody.Clear();
+                forcedVisibleKept.Clear();
+
+                if (registered > 0)
+                {
+                    string currentBodyName = body.name;
+                    int cloneIndex = currentBodyName.IndexOf("(Clone)");
+                    if (cloneIndex >= 0) currentBodyName = currentBodyName.Substring(0, cloneIndex);
+
+                    for (int i = 0; i < forcedVisibleRenderers.Count; i++)
+                    {
+                        if (forcedVisibleRenderers[i].bodyName == currentBodyName)
+                            forcedVisibleNamesForBody.Add(forcedVisibleRenderers[i].rendererObjectName);
+                    }
+                }
+            }
+
+            return forcedVisibleNamesForBody.Count > 0;
         }
         
         private static void SetCameraStateOverride(On.RoR2.CameraRigController.orig_SetCameraState orig, CameraRigController self, CameraState cameraState)
@@ -765,7 +838,15 @@ namespace VRMod
                             // hitbox capsule on the SAME body) change the character's height after
                             // the rig was anchored - re-anchor and rescale when the capsule changes,
                             // so a giant form gets the same scaled-up view as MUL-T / False Son.
-                            if (cachedCameraTargetTransform && cachedCameraTargetTransform.name == "VRCamera" && cachedCameraTargetTransform.parent == self.targetBody.transform)
+                            // Performance: this check ran every frame and is not cheap (a name
+                            // string, several GetComponent calls and a config lookup that builds
+                            // strings and parses a value). A form or capsule change does not need
+                            // to be caught within one frame, so it is polled four times a second;
+                            // an explicit re-anchor request is still handled on the same frame.
+                            bool viewAnchorCheckDue = reanchorRequested || Time.unscaledTime >= nextViewAnchorCheck;
+                            if (viewAnchorCheckDue) nextViewAnchorCheck = Time.unscaledTime + 0.25f;
+
+                            if (viewAnchorCheckDue && cachedCameraTargetTransform && cachedCameraTargetTransform.name == "VRCamera" && cachedCameraTargetTransform.parent == self.targetBody.transform)
                             {
                                 CapsuleCollider liveCollider = self.targetBody.GetComponent<CapsuleCollider>();
                                 float liveViewScale = FormViewScale(self.targetBody, out string liveHow);
@@ -885,6 +966,11 @@ namespace VRMod
                     spectatorCamera.transform.position = cameraState.position;
                     spectatorCamera.transform.rotation = cameraState.rotation;
                     spectatorCameraComponent.fieldOfView = cameraState.fov;
+
+                    // Performance: the spectator view is a full extra scene render (with
+                    // post-processing) on top of the two eyes. It is a small screen, so it renders
+                    // every other frame; its render texture keeps the last image in between.
+                    spectatorCameraComponent.enabled = (Time.frameCount & 1) == 0;
                 }
                 else
                 {

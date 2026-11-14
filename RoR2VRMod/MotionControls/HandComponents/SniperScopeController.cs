@@ -213,6 +213,8 @@ namespace VRMod
 
         private void OnEnable()
         {
+            if (renderLoop == null) renderLoop = StartCoroutine(RenderScopeView());
+
             if (!scopeCamera)
             {
                 return;
@@ -225,20 +227,36 @@ namespace VRMod
 
         private void OnDisable()
         {
+            if (renderLoop != null)
+            {
+                StopCoroutine(renderLoop);
+                renderLoop = null;
+            }
+
             scopeViewRenderer.material = clearMaterial;
         }
 
-        private void LateUpdate()
-        {
-            StartCoroutine(RenderScopeView());
-        }
+        // Performance: LateUpdate used to start a new coroutine and allocate a new WaitForEndOfFrame
+        // every frame the scope was up. One coroutine now runs for as long as the scope is enabled
+        // and renders at the end of each frame exactly as before. The null check matters: an
+        // exception inside the loop would end it for good, and the cameras are created a little
+        // after this component is.
+        private Coroutine renderLoop;
+
+        private static readonly WaitForEndOfFrame endOfFrame = new WaitForEndOfFrame();
 
         private IEnumerator RenderScopeView()
         {
-            yield return new WaitForEndOfFrame();
-            scopeCamera.Render();
-            scopeUICamera.Render();
-            Graphics.Blit(scopeUIRenderTexture, scopeRenderTexture, uiTransparentMaterial);
+            while (true)
+            {
+                yield return endOfFrame;
+
+                if (!scopeCamera || !scopeUICamera) continue;
+
+                scopeCamera.Render();
+                scopeUICamera.Render();
+                Graphics.Blit(scopeUIRenderTexture, scopeRenderTexture, uiTransparentMaterial);
+            }
         }
 
         internal void SetFOV(float fov)

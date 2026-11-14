@@ -26,7 +26,12 @@ namespace VRMod
 
         private bool foundStateMachine;
 
-        private static List<Type> vignetteAbilities = new List<Type>()
+        // The full-screen pass lives on its own component so it can be switched off while the
+        // vignette is fully open (see Update), without touching this component's own "enabled"
+        // flag, which is what the VR settings toggle drives.
+        private VignetteBlit blit;
+
+        private static HashSet<Type> vignetteAbilities = new HashSet<Type>()
         {
             typeof(EntityStates.Commando.DodgeState),
             typeof(EntityStates.Commando.SlideState),
@@ -51,6 +56,9 @@ namespace VRMod
 
             if (!vignette)
                 vignette = VRMod.VRAssetBundle.LoadAsset<Material>("VignetteMaterial");
+
+            blit = gameObject.AddComponent<VignetteBlit>();
+            blit.enabled = false;
         }
 
         private void OnEnable()
@@ -63,6 +71,15 @@ namespace VRMod
         {
             if (!foundStateMachine)
                 RoR2Application.onUpdate -= FindStateMachine;
+
+            if (blit)
+                blit.enabled = false;
+        }
+
+        private void OnDestroy()
+        {
+            if (blit)
+                Destroy(blit);
         }
 
         /// <summary>
@@ -98,13 +115,18 @@ namespace VRMod
             }
         }
 
-        private void OnRenderImage(RenderTexture source, RenderTexture destination)
+        // Performance: this used to be an OnRenderImage on the UI camera, i.e. a full-screen copy of
+        // each eye on EVERY frame of a run, although the vignette is fully open almost all of the
+        // time. The state check now runs once per frame here, and the full-screen pass is only
+        // enabled while the vignette is actually closed in. (It also means both eyes get the same
+        // radius; before, the radius advanced once per eye pass.)
+        private void Update()
         {
             if (foundStateMachine)
             {
                 stateMachines.RemoveAll(sm => sm == null);
 
-                activated = stateMachines != null && stateMachines.Count > 0 && stateMachines.Exists(sm => vignetteAbilities.Contains(sm.state.GetType()));
+                activated = stateMachines != null && stateMachines.Count > 0 && stateMachines.Exists(sm => sm.state != null && vignetteAbilities.Contains(sm.state.GetType()));
 
                 if (activated != wasActivated)
                 {
@@ -124,7 +146,19 @@ namespace VRMod
                 }
             }
 
-            Graphics.Blit(source, destination, vignette);
+            bool visible = activated || currentRadius < INITIAL_RADIUS - 0.0001f;
+
+            if (blit && blit.enabled != visible)
+                blit.enabled = visible;
+        }
+
+        /// <summary>The vignette's full-screen pass. Enabled only while the vignette is visible.</summary>
+        private class VignetteBlit : MonoBehaviour
+        {
+            private void OnRenderImage(RenderTexture source, RenderTexture destination)
+            {
+                Graphics.Blit(source, destination, vignette);
+            }
         }
     }
 }
