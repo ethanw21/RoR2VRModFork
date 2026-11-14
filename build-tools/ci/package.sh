@@ -14,10 +14,27 @@ rm -rf "$ROOT/dist"
 mkdir -p "$ROOT/dist"
 cp -r "$BASE" "$OUT"
 
+TOOL="$ROOT/refs/build/_tools/ExtractResources/ExtractResources.dll"
+
+compare() { # dll name, built file: what the published DLL and the new one reference and embed
+    local published
+    published="$(find "$BASE" -type f -name "$1" | head -n 1 || true)"
+    [ -n "$published" ] && [ -f "$TOOL" ] || return 0
+    if diff <(dotnet "$TOOL" --info "$published") <(dotnet "$TOOL" --info "$2") > "$ROOT/dist/$1.diff"; then
+        echo "  $1: references and embedded files match the published DLL"
+    else
+        echo "  $1: references or embedded files DIFFER from the published DLL ('<' published, '>' this build):"
+        sed 's/^/      /' "$ROOT/dist/$1.diff"
+        echo "::warning title=$1 differs from the published build::Its referenced assemblies or embedded files changed. See the Package step's log."
+    fi
+    rm -f "$ROOT/dist/$1.diff"
+}
+
 replace() { # dll name, project folder, required (1/0)
     local name="$1" built
     built="$(find "$ROOT/$2/bin/Release" -type f -name "$name" | head -n 1 || true)"
     [ -n "$built" ] || { echo "error: $name was not built"; exit 1; }
+    compare "$name" "$built"
     local hits
     hits="$(find "$OUT" -type f -name "$name")"
     if [ -z "$hits" ]; then

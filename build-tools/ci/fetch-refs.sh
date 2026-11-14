@@ -108,6 +108,9 @@ unity_package() { # package id, version, assembly name (= its .asmdef name)
     ref_assembly "$asm" "$(dirname "$asmdef")"
 }
 
+echo "== Build helper"
+dotnet build "$CI/tools/ExtractResources/ExtractResources.csproj" -c Release --nologo -v quiet -o "$REFS/build/_tools/ExtractResources"
+
 echo "== Published mod package ($TS_NAMESPACE/$TS_NAME ${TS_VERSION:-latest})"
 thunderstore "$TS_NAMESPACE" "$TS_NAME" "$TS_VERSION" "$REFS/package"
 (cd "$REFS/package" && find . -type f -printf '  %10s  %p\n' | sort -k2)
@@ -123,7 +126,6 @@ if ! from_packages Bhaptics.Tact.dll || ! from_packages ShockwaveManager.dll; th
     # embedded files (it used to copy them into the game folder), so they are taken out of it.
     echo "  not shipped as files; extracting them from DrBibop's original VRPatcher.dll"
     thunderstore DrBibop VRMod "" "$REFS/original"
-    dotnet build "$CI/tools/ExtractResources/ExtractResources.csproj" -c Release --nologo -v quiet -o "$REFS/build/_tools/ExtractResources"
     dotnet "$REFS/build/_tools/ExtractResources/ExtractResources.dll" "$REFS/original/patchers/VRPatcher.dll" "$REFS/original/embedded"
     for f in Bhaptics.Tact.dll ShockwaveManager.dll; do
         hit="$(find "$REFS/original/embedded" -type f -iname "*$f" | head -n 1 || true)"

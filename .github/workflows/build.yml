@@ -25,9 +25,9 @@ jobs:
       DOTNET_NOLOGO: "1"
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 8.0.x
 
@@ -42,11 +42,15 @@ jobs:
         run: |
           bash build-tools/ci/package.sh
           version="$(jq -r .version_number manifest.json)"
-          echo "name=Resurrected_VRMod-${version}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "name=Resurrected_VRMod-${version}-${COMMIT::7}" >> "$GITHUB_OUTPUT"
+        env:
+          # On a pull request GITHUB_SHA is a temporary merge commit; name the artifact after
+          # the commit that was actually pushed.
+          COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
 
       # The downloaded artifact is a zip of the package folder, so it can be imported as it is
       # with the mod manager's "Import local mod".
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: ${{ steps.package.outputs.name }}
           path: dist/package/

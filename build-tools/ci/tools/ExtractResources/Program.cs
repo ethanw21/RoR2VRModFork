@@ -1,6 +1,7 @@
 // Build helper, not part of the mod.
 //
 //   ExtractResources <assembly.dll> <output folder>
+//   ExtractResources --info <assembly.dll>      (lists referenced assemblies and embedded files)
 //
 // Writes every file embedded in a .NET assembly to the output folder and prints what it found.
 // Plain manifest resources are written under their resource name. A ".resources" container (what
@@ -18,9 +19,13 @@ internal static class Program
 {
     private static int Main(string[] args)
     {
+        if (args.Length == 2 && args[0] == "--info")
+            return PrintInfo(args[1]);
+
         if (args.Length != 2)
         {
             Console.Error.WriteLine("usage: ExtractResources <assembly.dll> <output folder>");
+            Console.Error.WriteLine("       ExtractResources --info <assembly.dll>");
             return 2;
         }
 
@@ -66,6 +71,33 @@ internal static class Program
             }
         }
 
+        return 0;
+    }
+
+    /// <summary>
+    /// Prints what an assembly depends on and what it embeds, one item per line, in a stable
+    /// order. package.sh compares this between the published DLL and the newly built one, so a
+    /// build that suddenly references a different library (or lost an embedded file) is visible.
+    /// </summary>
+    private static int PrintInfo(string path)
+    {
+        using FileStream file = File.OpenRead(path);
+        using PEReader pe = new PEReader(file);
+        MetadataReader md = pe.GetMetadataReader();
+
+        var lines = new System.Collections.Generic.List<string>();
+
+        foreach (AssemblyReferenceHandle handle in md.AssemblyReferences)
+        {
+            AssemblyReference reference = md.GetAssemblyReference(handle);
+            lines.Add($"reference  {md.GetString(reference.Name)}  {reference.Version}");
+        }
+
+        foreach (ManifestResourceHandle handle in md.ManifestResources)
+            lines.Add($"resource   {md.GetString(md.GetManifestResource(handle).Name)}");
+
+        lines.Sort(StringComparer.Ordinal);
+        foreach (string line in lines) Console.WriteLine(line);
         return 0;
     }
 

@@ -55,6 +55,17 @@ cd /root/build/pkg && zip -r /root/build/Blowntobytes-VRMod-<VERSION>.zip .
 - Reference assemblies: `/root/build/libs/`, `/root/build/mmhook/`, `/root/build/il/`
 - Package template: `/root/build/pkg/` (manifest.json, icon.png, plugins/, patchers/)
 
+## Automated build (GitHub Actions)
+
+`.github/workflows/build.yml` builds on every push to `main`, every pull request and on demand.
+It needs no copy of the game: `build-tools/ci/fetch-refs.sh` gathers the references, `dotnet build
+VRMod.sln -c Release` compiles VRPatcher, VRMod and VRAPI, and `build-tools/ci/package.sh` puts the
+new DLLs into the latest published Thunderstore package. The run's artifact is an installable zip.
+Details, and what to change after a game update: `build-tools/ci/README.md`.
+
+This is the quickest way to find out whether a change compiles when the `/root/build` toolchain
+below is not available: push the branch, open a pull request, read the Build check.
+
 ## Version release checklist
 
 **Every fix or feature gets its own version number. Never reuse or amend a version that has been built.**
