@@ -2,6 +2,27 @@
 
 This package continues [DrBibop's RoR2VRMod](https://github.com/DrBibop/RoR2VRMod) (MIT), whose own history ends at 2.9.2; its original changelog is kept in the source repository as `CHANGELOG-original-DrBibop.md`. Version numbers restart at 1.0.x for this package.
 
+### Unreleased (performance pass, not yet built or tested in a headset)
+
+**New**
+- **VR render scale** (VR tab, default 1.00, range 0.50 to 1.50): multiplies the resolution the headset runtime asks for. Lower is faster and softer, higher is sharper and slower. The change applies about a second after the slider stops and causes one short hitch.
+- **Log frame times** (VR tab, off by default): writes a `[VR perf]` line to the BepInEx log every 5 seconds with average and worst frame time, slow frame count, garbage collections and the eye texture size, for comparing builds and settings.
+- **Experimental single-pass instanced rendering** (`[Performance]` in `VRMod.cfg` only, off by default, needs a restart): draws both eyes in one pass. Expect visual breakage; set it back to `false` if the picture is wrong.
+- **Clear decal lists each frame** (`[Performance]` in `VRMod.cfg` only, on by default): escape hatch for the decal fix below.
+
+**Fixed**
+- **Hitch on every grip press during a run:** the settings-tab shortcut scanned the whole scene twice per squeeze. It now only looks while a menu can be open.
+- **Hitch on every item pickup** for survivors with generated hands: the hands were rebuilt whenever any item count changed. They are now rebuilt only when the item displays on the model actually change, and the meshes of the old hands are released instead of leaking.
+- **Hitch when interacting, pinging or using equipment:** finding the caller no longer builds a full stack trace.
+- **Decals were never removed from the headset camera's draw list**, so every decal seen during a stage kept being processed until the camera was rebuilt.
+- Removed per-frame garbage from the position indicators, the first-person body hiding, the melee swing check, the sound limiter, the experience orb cap and the Railgunner scope.
+
+**Changed**
+- The comfort vignette's full-screen pass only runs while the vignette is closed in, instead of on every frame.
+- The projection helper camera no longer runs a deferred lighting pass with nothing to draw.
+- The spectator screen renders every other frame.
+- Hand HUD canvases are switched off while hidden; controller rumble is only sent while the screen is shaking.
+
 ### 1.1.1
 
 **New**
