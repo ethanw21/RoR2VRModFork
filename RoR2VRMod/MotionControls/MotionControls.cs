@@ -411,9 +411,13 @@ namespace VRMod
         {
             orig(self);
 
+            // Performance: this runs for every character model every frame. Rule out the models
+            // that are not the local player before the six-part HandsReady check.
+            if (!self.body.IsLocalBody()) return;
+
             if (!HandsReady) return;
 
-            if (self.body.IsLocalBody() && self.visibility != VisibilityLevel.Invisible)
+            if (self.visibility != VisibilityLevel.Invisible)
             {
                 foreach (CharacterModel.RendererInfo rendererInfo in dominantHand.currentHand.rendererInfos)
                 {

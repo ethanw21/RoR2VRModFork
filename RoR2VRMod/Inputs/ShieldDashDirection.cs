@@ -27,7 +27,11 @@ namespace VRMod
             On.EntityStates.BaseState.GetAimRay += (orig, self) =>
             {
                 Ray ray = orig(self);
-                if (self.characterBody && self.isAuthority && InDash(self.characterBody))
+                // Performance: every character's aim ray passes through here. InDash only ever
+                // accepts the local player's body, so compare the reference first and leave the
+                // more expensive Unity checks for that one body.
+                CharacterBody body = self.characterBody;
+                if (object.ReferenceEquals(body, MotionControls.currentBody) && body && self.isAuthority && InDash(body))
                 {
                     Vector3 dir = MoveForward();
                     if (dir.sqrMagnitude > 0.0001f) { Log(); return new Ray(ray.origin, dir); }

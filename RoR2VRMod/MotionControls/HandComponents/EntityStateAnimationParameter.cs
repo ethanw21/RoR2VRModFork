@@ -35,7 +35,9 @@ namespace VRMod
 
         private static void CheckStateMachine(On.RoR2.EntityStateMachine.orig_SetState orig, EntityStateMachine self, EntityState newState)
         {
-            if (self.commonComponents.characterBody.IsLocalBody())
+            // Performance: this hook sees every state change of every character. Skip the body
+            // check when no hand is listening.
+            if (instances.Count > 0 && self.commonComponents.characterBody.IsLocalBody())
             {
                 foreach (EntityStateAnimationParameter animationParameter in instances)
                 {
