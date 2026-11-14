@@ -1,12 +1,23 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <!-- Optional API plugin for other mods. Shared settings are in ../Directory.Build.props. -->
+
   <PropertyGroup>
     <TargetFramework>netstandard2.1</TargetFramework>
-    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+    <AssemblyName>VRAPI</AssemblyName>
+    <RootNamespace>VRAPI</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\RoR2VRMod\VRMod.csproj" />
+    <PackageReference Include="BepInEx.Core" Version="$(BepInExVersion)" />
+    <PackageReference Include="UnityEngine.Modules" Version="$(UnityModulesVersion)" IncludeAssets="compile" PrivateAssets="all" />
+    <PackageReference Include="RiskOfRain2.GameLibs" Version="$(GameLibsVersion)" Publicize="true" IncludeAssets="compile" PrivateAssets="all" />
+    <PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="$(PublicizerVersion)" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RoR2VRMod\VRMod.csproj" Private="false" />
+    <Reference Include="$(RefsLibDir)*.dll" Publicize="true" Private="false" />
   </ItemGroup>
 
 </Project>

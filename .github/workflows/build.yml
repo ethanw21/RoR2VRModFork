@@ -1,0 +1,53 @@
+name: Build
+
+# Compiles VRPatcher, VRMod and VRAPI and assembles an installable mod package on every push to
+# main, every pull request, and on demand (Actions tab -> Build -> Run workflow).
+# How it works and how to change versions: build-tools/ci/README.md
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DOTNET_NOLOGO: "1"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Fetch references
+        run: bash build-tools/ci/fetch-refs.sh
+
+      - name: Build
+        run: dotnet build VRMod.sln -c Release -clp:NoSummary
+
+      - name: Package
+        id: package
+        run: |
+          bash build-tools/ci/package.sh
+          version="$(jq -r .version_number manifest.json)"
+          echo "name=Resurrected_VRMod-${version}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      # The downloaded artifact is a zip of the package folder, so it can be imported as it is
+      # with the mod manager's "Import local mod".
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.name }}
+          path: dist/package/
+          if-no-files-found: error

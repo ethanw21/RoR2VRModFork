@@ -1,0 +1,36 @@
+<Project>
+  <!--
+    Shared settings for VRPatcher, VRMod and VRAPI, and for the reference-only helper projects
+    that build-tools/ci/fetch-refs.sh generates under refs/build/.
+
+    The version numbers below are the single place to change when the game updates:
+    GameLibsVersion and MMHookVersion must both match the game build the mod targets.
+  -->
+  <PropertyGroup>
+    <BepInExVersion>5.4.21</BepInExVersion>
+    <UnityModulesVersion>2021.3.33</UnityModulesVersion>
+    <GameLibsVersion>1.5.0-r.1</GameLibsVersion>
+    <MMHookVersion>2026.10.8</MMHookVersion>
+    <PublicizerVersion>0.4.3</PublicizerVersion>
+
+    <!-- Filled by build-tools/ci/fetch-refs.sh; ignored by git. -->
+    <RefsLibDir>$(MSBuildThisFileDirectory)refs/lib/</RefsLibDir>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Optimize>true</Optimize>
+    <Deterministic>true</Deterministic>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <!-- The hand-driven builds never generated assembly attributes; keep the output the same. -->
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <!-- Same warning list the csc response files used, plus NuGet's "restored for another framework". -->
+    <NoWarn>$(NoWarn);NU1701;NU1603;1701;1702;CS8632;CS0618;CS0612;CS0414;CS0169;CS0649;CS0108;CS0109;CS0162;CS0168;CS0219;CS0252;CS0420;CS0436;CS0628;CS0659;CS0661;CS0693;CS1591;CS1573;CS1570;CS1572;CS1574;CS1584;CS1587;CS1658;CS3001;CS3003;CS3005;CS3009;CS3021;CS8321;CS0809;CS0114;CS0067;CS0105;CS0184;CS0472;CS0642;CS8073;CS0665;CS1717;CS8981;CS0164;CS0253;CS0282;CS0465;CS0652;CS0675;CS0728;CS1030;CS1522;CS1718;CS8500;CS9191;SYSLIB0003;SYSLIB0011;SYSLIB0050;SYSLIB0051</NoWarn>
+  </PropertyGroup>
+</Project>
