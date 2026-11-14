@@ -13,6 +13,8 @@
 /VREnabler/[Bb]in/
 /VRAPI/[Oo]bj/
 /VRAPI/[Bb]in/
+/build-tools/ci/tools/*/[Oo]bj/
+/build-tools/ci/tools/*/[Bb]in/
 /build/
 /out/
 /pkg/

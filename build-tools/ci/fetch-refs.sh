@@ -4,7 +4,8 @@
 #
 #   1. The published Thunderstore package of this mod: the XR / input libraries it ships are
 #      both compiled against and shipped again unchanged.
-#   2. The bHaptics and Shockwave SDK libraries (from that package, or from DrBibop's original).
+#   2. The bHaptics and Shockwave SDK libraries, compile-time only (from that package, or taken
+#      out of DrBibop's original VRPatcher.dll, which carries them as embedded files).
 #   3. Reference-only builds of two Unity packages the GAME ships (post-processing and the
 #      tracked pose driver), compiled from Unity's public package registry.
 #   4. A reference-only stub of the game's Decalicious.dll.
@@ -118,11 +119,17 @@ done
 
 echo "== Haptics SDK libraries"
 if ! from_packages Bhaptics.Tact.dll || ! from_packages ShockwaveManager.dll; then
-    echo "  not in the published package; taking them from DrBibop's original VRMod package"
+    # Neither published package ships them as files. DrBibop's original patcher carries them as
+    # embedded files (it used to copy them into the game folder), so they are taken out of it.
+    echo "  not shipped as files; extracting them from DrBibop's original VRPatcher.dll"
     thunderstore DrBibop VRMod "" "$REFS/original"
-    (cd "$REFS/original" && find . -type f -name '*.dll' -printf '  %10s  %p\n' | sort -k2)
+    dotnet build "$CI/tools/ExtractResources/ExtractResources.csproj" -c Release --nologo -v quiet -o "$REFS/build/_tools/ExtractResources"
+    dotnet "$REFS/build/_tools/ExtractResources/ExtractResources.dll" "$REFS/original/patchers/VRPatcher.dll" "$REFS/original/embedded"
     for f in Bhaptics.Tact.dll ShockwaveManager.dll; do
-        from_packages "$f" || { echo "error: $f not found in either package"; exit 1; }
+        hit="$(find "$REFS/original/embedded" -type f -iname "*$f" | head -n 1 || true)"
+        [ -n "$hit" ] || { echo "error: $f is not embedded in the original VRPatcher.dll"; exit 1; }
+        cp "$hit" "$LIB/$f"
+        echo "  $f  <-  ${hit#$REFS/}"
     done
 fi
 

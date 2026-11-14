@@ -14,7 +14,7 @@ No copy of the game is involved. The build uses:
 | Hook definitions | `MMHOOK.RoR2` on NuGet |
 | Unity engine modules, BepInEx | `UnityEngine.Modules`, `BepInEx.Core` on NuGet |
 | XR / input libraries the mod ships | the published Thunderstore package of this mod |
-| bHaptics and Shockwave SDKs | that package, or DrBibop's original one |
+| bHaptics and Shockwave SDKs (compile time only) | embedded files inside DrBibop's original `VRPatcher.dll` |
 | Post-processing and tracked pose driver (game side) | compiled for reference from Unity's package registry |
 | Decalicious (game side) | a small reference stub, `stubs/Decalicious/Decalicious.cs` |
 
