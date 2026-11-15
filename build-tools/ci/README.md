@@ -1,9 +1,14 @@
 # Automated build (GitHub Actions)
 
 `.github/workflows/build.yml` builds the mod on every push to `main`, on every pull request, and
-on demand (Actions tab, "Build", "Run workflow"). A finished run has one artifact, named
+on demand (Actions tab, "Build", "Run workflow"). A finished run has an artifact named
 `Resurrected_VRMod-<version>-<commit>`. Downloading it gives a zip in Thunderstore layout that can
 be installed with the mod manager's "Import local mod".
+
+A pull request run has a second artifact, `Resurrected_VRMod-<version>-BASE-<commit>`: the base
+branch's source folders (`RoR2VRMod`, `VREnabler`, `VRAPI`) built with the pull request's build
+setup. If something is wrong in the game, test both. A fault that the BASE package shows too comes
+from the build setup, not from the pull request's changes to the mod.
 
 No copy of the game is involved. The build uses:
 
@@ -25,8 +30,9 @@ git). `package.sh` then takes the published package, puts the newly built `VRMod
 byte for byte the one from the published package.
 
 The Package step also compares each new DLL with the published one: which libraries it references
-and which files it embeds (version numbers and the base class library are left out, see the last
-section). A difference shows up as a warning on the run. It is expected when a change adds or
+and which files it embeds, by name, size and content hash (version numbers of libraries and the
+base class library are left out, see the last section). A difference shows up as a warning on the
+run. It is expected when a change adds or
 removes a dependency on purpose, and a red flag when it does not.
 
 ## Things to change now and then
@@ -62,5 +68,6 @@ differences in what they reference are:
 - Version numbers recorded for BepInEx, MonoMod and Mono.Cecil, which come from the
   `BepInEx.Core` NuGet package here. These libraries are loaded by name at runtime.
 
-Every other referenced library and every embedded file is the same. Test an artifact in the game
+Every other referenced library is the same, and every embedded file (the asset bundle, the native
+OpenXR plugin and loader, the subsystems manifest) is byte for byte the published one. Test an artifact in the game
 before publishing it.
