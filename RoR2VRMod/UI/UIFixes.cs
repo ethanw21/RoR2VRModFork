@@ -703,19 +703,38 @@ namespace VRMod
             if (!HUD.cvHudEnable.value || !PositionIndicator.cvPositionIndicatorsEnable.value)
                 return;
 
+            if (PositionIndicator.instancesList.Count == 0)
+                return;
+
+            // Performance: this runs for every UI camera render (once per eye). It used to search
+            // the whole ping list for every indicator, allocating a closure each time, and to walk
+            // camera -> rig -> scene camera -> parent again per indicator. The ping lookup is now
+            // one reusable set built per call, and the transforms are fetched once.
+            pingPositionIndicators.Clear();
+            var pings = PingIndicator.instancesList;
+            for (int i = 0; i < pings.Count; i++)
+            {
+                PingIndicator ping = pings[i];
+                if (ping && ping.positionIndicator) pingPositionIndicators.Add(ping.positionIndicator);
+            }
+
+            Transform rigTransform = uiCamera.cameraRigController.sceneCam.transform.parent;
+            Vector3 uiCameraPosition = uiCamera.transform.position;
+
             foreach (PositionIndicator indicator in PositionIndicator.instancesList)
             {
                 Vector3 position = indicator.targetTransform ? indicator.targetTransform.position : indicator.defaultPosition;
                 position.y += indicator.yOffset;
 
-                bool isPingIndicator = PingIndicator.instancesList.Exists((x) => x.positionIndicator == indicator);
+                bool isPingIndicator = pingPositionIndicators.Contains(indicator);
 
-                Transform rigTransform = uiCamera.cameraRigController.sceneCam.transform.parent;
                 Vector3 newPosition = rigTransform.InverseTransformPoint(position);
                 indicator.transform.position = newPosition;
-                indicator.transform.localScale = (isPingIndicator ? 1: 0.2f) * Vector3.Distance(uiCamera.transform.position, newPosition) * Vector3.one;
+                indicator.transform.localScale = (isPingIndicator ? 1: 0.2f) * Vector3.Distance(uiCameraPosition, newPosition) * Vector3.one;
             }
         }
+
+        private static readonly System.Collections.Generic.HashSet<PositionIndicator> pingPositionIndicators = new System.Collections.Generic.HashSet<PositionIndicator>();
 
         private static void PositionForUIOverride(On.RoR2.Indicator.orig_PositionForUI orig, Indicator self, Camera sceneCamera, Camera uiCamera)
         {

@@ -43,7 +43,10 @@ namespace VRMod
 
         private void Update()
         {
-            HandController hand = GetComponentInParent<HandController>();
+            // Performance: the parent hand is already cached in Awake; only walk the hierarchy again
+            // if it was not there yet (this used to run every frame).
+            if (!parentHand) parentHand = GetComponentInParent<HandController>();
+            HandController hand = parentHand;
 
             if (!targetHand)
             {

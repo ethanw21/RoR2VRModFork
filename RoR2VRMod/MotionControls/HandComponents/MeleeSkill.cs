@@ -90,15 +90,25 @@ namespace VRMod
 
             bool swinging = (Time.fixedDeltaTime * speedThreshold) < (Vector3.Distance(tipPath[0], tipPath[2]) / 2);
 
-            List<GenericSkill> skillsToActivate = body.skillLocator.allSkills.ToList().Where(x => activatedSkills.ToList().Contains(x.skillName) || activatedSkills.ToList().Contains(x.skillDef.skillName)).ToList();
+            // Performance: this is a physics-tick callback (60 times a second, per melee hand). The
+            // skill matching below only ever does something while the hand is swinging, and it used
+            // to run regardless - rebuilding several lists with LINQ on every tick. Nothing to do
+            // unless swinging, and when swinging the skills are matched with plain loops.
+            if (!swinging) return;
 
-            foreach (GenericSkill skill in skillsToActivate)
+            foreach (GenericSkill skill in body.skillLocator.allSkills)
             {
-                if (skill.skillDef.skillName.Contains("Lunar") && skill.skillDef.skillName.Contains("Replacement")) continue;
+                if (!skill || !skill.skillDef) continue;
+
+                string defName = skill.skillDef.skillName;
+
+                if (System.Array.IndexOf(activatedSkills, skill.skillName) < 0 && System.Array.IndexOf(activatedSkills, defName) < 0) continue;
+
+                if (defName != null && defName.Contains("Lunar") && defName.Contains("Replacement")) continue;
 
                 SkillSlot slot = body.skillLocator.FindSkillSlot(skill);
 
-                if (slot != SkillSlot.None && swinging)
+                if (slot != SkillSlot.None)
                     timers[(int)slot] = activationTime;
             }
         }

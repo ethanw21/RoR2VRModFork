@@ -114,33 +114,51 @@ namespace VRMod
             if (string.IsNullOrEmpty(content.bodyToken) || Language.IsTokenInvalid(content.bodyToken))
                 return;
 
-            // Search items
+            // Performance: one dictionary look-up instead of comparing the token against every item
+            // and every equipment each time a tooltip opens.
+            string descriptionToken;
+            if (PickupToDescription().TryGetValue(content.bodyToken, out descriptionToken) && !Language.IsTokenInvalid(descriptionToken))
+            {
+                content.bodyToken = descriptionToken;
+            }
+        }
+
+        private static System.Collections.Generic.Dictionary<string, string> pickupToDescription;
+
+        private static int pickupTableItemCount = -1;
+
+        private static int pickupTableEquipmentCount = -1;
+
+        /// <summary>
+        /// pickupToken to descriptionToken for every item, then every equipment. The first entry for
+        /// a token wins, which is the order the old linear search found them in. Rebuilt if the
+        /// catalogs change size (they are filled once while the game loads).
+        /// </summary>
+        private static System.Collections.Generic.Dictionary<string, string> PickupToDescription()
+        {
+            if (pickupToDescription != null && pickupTableItemCount == ItemCatalog.itemCount && pickupTableEquipmentCount == EquipmentCatalog.equipmentCount)
+                return pickupToDescription;
+
+            var table = new System.Collections.Generic.Dictionary<string, string>();
+
             for (int i = 0; i < ItemCatalog.itemCount; i++)
             {
                 ItemDef def = ItemCatalog.GetItemDef((ItemIndex)i);
-                if (def != null && def.pickupToken == content.bodyToken)
-                {
-                    if (!Language.IsTokenInvalid(def.descriptionToken))
-                    {
-                        content.bodyToken = def.descriptionToken;
-                    }
-                    return;
-                }
+                if (def != null && def.pickupToken != null && !table.ContainsKey(def.pickupToken))
+                    table.Add(def.pickupToken, def.descriptionToken);
             }
 
-            // Search equipment
             for (int i = 0; i < EquipmentCatalog.equipmentCount; i++)
             {
                 EquipmentDef def = EquipmentCatalog.GetEquipmentDef((EquipmentIndex)i);
-                if (def != null && def.pickupToken == content.bodyToken)
-                {
-                    if (!Language.IsTokenInvalid(def.descriptionToken))
-                    {
-                        content.bodyToken = def.descriptionToken;
-                    }
-                    return;
-                }
+                if (def != null && def.pickupToken != null && !table.ContainsKey(def.pickupToken))
+                    table.Add(def.pickupToken, def.descriptionToken);
             }
+
+            pickupTableItemCount = ItemCatalog.itemCount;
+            pickupTableEquipmentCount = EquipmentCatalog.equipmentCount;
+            pickupToDescription = table;
+            return table;
         }
 
         private static void OnPing(On.RoR2.PingerController.orig_SetCurrentPing orig, PingerController self, PingerController.PingInfo newPingInfo)

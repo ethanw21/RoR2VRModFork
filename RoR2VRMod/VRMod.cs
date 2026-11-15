@@ -25,6 +25,10 @@ namespace VRMod
         private static XRManagerSettings activeManagerSettings;
         private static bool xrShutDown;
 
+        /// <summary>True when the "Experimental single-pass instanced rendering" option was on at
+        /// startup, so both eyes are drawn by ONE camera pass per frame instead of two.</summary>
+        internal static bool SinglePassActive { get; private set; }
+
         private void Awake()
         {
             StaticLogger = Logger;
@@ -42,6 +46,8 @@ namespace VRMod
             SoundBudget.Init(); // 2.26.0 - VR option: limit duplicate sound starts
             ProjectileGhostBudget.Init(); // 2.28.0 - VR performance mode: max 150 player projectile visuals
             EffectBudget.Init(); // 2.25.0 - VR performance: stricter effect budget under heavy load
+            RenderScaleController.Init(); // VR render scale option (eye texture resolution)
+            FrameTimeLogger.Init(); // optional frame time / garbage collection log for before-and-after comparisons
             ShieldDashDirection.Init(); // 2.26.51/52 - Enforcer shield dash follows the movement direction
             ExpOrbBudget.Init(); // 2.26.46 - VR performance mode: cap experience orb visuals (replaces 2.26.42 gold orb cap)
             EclipseLiteEffect.Init(); // 2.23.51 - no proc flash from Eclipse Lite (graphical issues in VR)
@@ -100,7 +106,14 @@ namespace VRMod
 
             XRLoader xrLoader = ScriptableObject.CreateInstance<OpenXRLoader>();
 
-            OpenXRSettings.Instance.renderMode = OpenXRSettings.RenderMode.MultiPass;
+            // Multi-pass (the whole scene rendered once per eye) is the mode the game's flat-screen
+            // shaders are known to work in. Single-pass instanced is an opt-in experiment: it would
+            // roughly halve the CPU cost of rendering, but needs stereo-instancing shader variants
+            // the game was not built with, so anything from "works" to "one eye only" can happen.
+            SinglePassActive = ModConfig.SinglePassInstanced.Value;
+            OpenXRSettings.Instance.renderMode = SinglePassActive ? OpenXRSettings.RenderMode.SinglePassInstanced : OpenXRSettings.RenderMode.MultiPass;
+            if (SinglePassActive)
+                StaticLogger.LogWarning("InitVR: EXPERIMENTAL single-pass instanced rendering is ON ([Performance] in VRMod.cfg). If the picture is wrong in either eye, set it back to false and restart.");
 
             SetupControllerProfiles();
 
@@ -148,7 +161,7 @@ namespace VRMod
                 StaticLogger.LogInfo("InitVR: XR display subsystem not running yet (it usually starts a moment later). If the headset stays black, check that the OpenXR runtime is active.");
             }
 
-            StaticLogger.LogInfo($"InitVR: OpenXR display running={displayRunning}, {xrSubsystems.Count} XR input subsystem(s).");
+            StaticLogger.LogInfo($"InitVR: OpenXR display running={displayRunning}, {xrSubsystems.Count} XR input subsystem(s), render mode={OpenXRSettings.Instance.renderMode}, render scale setting={ModConfig.RenderScale.Value:F2}.");
             StaticLogger.LogInfo($"[VR config] SeatedMode(config)={ModConfig.SeatedMode.Value} -> forcing device origin + eye level; ControllerAngleOffset={ModConfig.ControllerAngleOffset.Value}; IntroCameraYaw={ModConfig.IntroCameraYaw.Value}; MotionControls={ModConfig.InitialMotionControlsValue}; FirstPerson={ModConfig.InitialFirstPersonValue}");
             global::VRMod.Inputs.VRInputDiagnostics.LogInteractionProfiles("after InitVR");
         }

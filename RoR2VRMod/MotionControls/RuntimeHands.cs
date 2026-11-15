@@ -349,22 +349,40 @@ namespace VRMod
             stateHookApplied = true;
 
             // Debug: log every entity state the LOCAL body enters, so we can map which states each
-            // DLC skill uses. No-op unless the debug flag is on.
-            On.EntityStates.EntityState.OnEnter += (orig, self) =>
+            // DLC skill uses.
+            // Performance: the hook wraps EVERY state entered by EVERY character in the scene, so
+            // it is only installed while the debug flag is on (and removed again when it is
+            // switched off) instead of sitting in that path as a permanent no-op.
+            ModConfig.RuntimeHandsDebug.SettingChanged += (sender, args) => SyncStateDebugHook();
+            SyncStateDebugHook();
+        }
+
+        private static bool stateDebugHookInstalled;
+
+        private static void SyncStateDebugHook()
+        {
+            bool want = ModConfig.RuntimeHandsDebug.Value;
+            if (want == stateDebugHookInstalled) return;
+            stateDebugHookInstalled = want;
+
+            if (want) On.EntityStates.EntityState.OnEnter += LogLocalStateEnter;
+            else On.EntityStates.EntityState.OnEnter -= LogLocalStateEnter;
+        }
+
+        private static void LogLocalStateEnter(On.EntityStates.EntityState.orig_OnEnter orig, EntityStates.EntityState self)
+        {
+            orig(self);
+
+            if (!ModConfig.RuntimeHandsDebug.Value) return;
+
+            try
             {
-                orig(self);
-
-                if (!ModConfig.RuntimeHandsDebug.Value) return;
-
-                try
+                if (MotionControls.currentBody && self.outer && self.outer.commonComponents.characterBody == MotionControls.currentBody)
                 {
-                    if (MotionControls.currentBody && self.outer && self.outer.commonComponents.characterBody == MotionControls.currentBody)
-                    {
-                        VRMod.StaticLogger.LogInfo($"[VR debug] state enter: {self.GetType().FullName} (machine: {self.outer.customName})");
-                    }
+                    VRMod.StaticLogger.LogInfo($"[VR debug] state enter: {self.GetType().FullName} (machine: {self.outer.customName})");
                 }
-                catch { }
-            };
+            }
+            catch { }
         }
 
         /// <summary>
@@ -529,7 +547,7 @@ namespace VRMod
                 alignerComp.builtModelId = model.GetInstanceID();
                 alignerComp.sourceHandBone = handBone;
                 alignerComp.itemDisplaysAtBuild = CountItemDisplays(handBone);
-                alignerComp.inventorySumAtBuild = InventorySum(body);
+                alignerComp.bakeSignatureAtBuild = BakeSourceSignature(body);
                 alignerComp.BindConfig();
 
 
@@ -1195,7 +1213,11 @@ namespace VRMod
                 // Carry over per-renderer shader data (elite index, dither/fade, tints) that RoR2
                 // drives through MaterialPropertyBlocks - without it the material renders wrong.
                 CopyPropertyBlock(smr, mr);
-                part.AddComponent<RuntimeHandPartMirror>().source = smr;
+                RuntimeHandPartMirror partMirror = part.AddComponent<RuntimeHandPartMirror>();
+                partMirror.source = smr;
+                // The part owns the mesh that was just built for it and destroys it with itself.
+                // Before this, every re-bake left the previous hand's meshes in memory for good.
+                partMirror.ownedMesh = handMesh;
                 RegisterRendererInfo(rendererInfos, charModel, smr, mr, outMats.Count > 0 ? outMats[0] : null);
                 if (!TagIfItemDisplay(smr, part)) { characterParts++; skinnedCharacterParts++; }
 
@@ -1439,33 +1461,59 @@ namespace VRMod
         }
 
         /// <summary>
-        /// Cheap signature of what the character is carrying. Watching the inventory directly is
-        /// far more reliable than counting item displays on one bone: a pickup may attach its
-        /// model to the forearm, the chest or nothing at all, and we want the hand re-baked the
-        /// moment the inventory changes either way.
+        /// Cheap signature of everything on the character model that a hand bake can capture: the
+        /// item / equipment display instances the game has attached anywhere on the model (and
+        /// whether the mod has hidden them), plus the number of skinned renderers and mesh filters
+        /// on the model, which also catches props that are not item displays.
+        ///
+        /// Performance: the watchdog used to compare an inventory checksum, so EVERY pickup -
+        /// including another stack of an item that is already displayed, or an item with no
+        /// display at all - threw both hands away and re-baked them (re-skinning every skinned
+        /// mesh on the character each time). The baked geometry only depends on which display
+        /// instances exist, not on stack counts, so that is what is compared now. It is also more
+        /// accurate: display prefabs load asynchronously, and this notices one when it actually
+        /// arrives on the model rather than when the inventory number changed.
         /// </summary>
-        internal static int InventorySum(CharacterBody body)
+        internal static int BakeSourceSignature(CharacterBody body)
         {
-            if (!body || !body.inventory) return 0;
+            if (!body || !body.modelLocator) return 0;
 
-            int sum = 0;
+            int sig = 17;
 
             try
             {
-                // itemAcquisitionOrder is the public list of distinct items held, in pickup order.
-                // Combining its count with each item's stack size changes on any acquisition.
-                var order = body.inventory.itemAcquisitionOrder;
-                if (order != null)
+                Transform model = body.modelLocator.modelTransform;
+                if (!model) return 0;
+
+                CharacterModel charModel = model.GetComponent<CharacterModel>();
+                List<CharacterModel.ParentedPrefabDisplay> displays = charModel ? charModel.parentedPrefabDisplays : null;
+                if (displays != null)
                 {
-                    for (int i = 0; i < order.Count; i++)
+                    for (int i = 0; i < displays.Count; i++)
                     {
-                        sum += (int)order[i] + body.inventory.GetItemCount(order[i]) * 31;
+                        GameObject inst = displays[i].instance;
+                        if (!inst) continue;
+
+                        unchecked
+                        {
+                            sig = sig * 31 + inst.GetInstanceID();
+                            if (inst.GetComponent<VRHiddenItemDisplay>()) sig = sig * 31 + 1;
+                        }
                     }
+                }
+
+                // The two component types the bake reads. Counted rather than "all renderers" so
+                // particle effects the game parents onto the model (burning, for one) do not
+                // look like a change.
+                unchecked
+                {
+                    sig = sig * 31 + model.GetComponentsInChildren<SkinnedMeshRenderer>(true).Length;
+                    sig = sig * 31 + model.GetComponentsInChildren<MeshFilter>(true).Length;
                 }
             }
             catch { }
 
-            return sum;
+            return sig;
         }
 
         internal static int CountItemDisplays(Transform bone)
@@ -1567,6 +1615,9 @@ namespace VRMod
         /// out / recharging). The game never re-activates the docked ball object after the
         /// first throw, so its active flag cannot be used for the return.</summary>
         internal GenericSkill stockSkill;
+        /// <summary>The mesh built for this part by the bake. Null for rigid parts, which share
+        /// the source renderer's own mesh asset and must never destroy it.</summary>
+        internal Mesh ownedMesh;
 
         private Renderer own;
         private float nextCheck;
@@ -1575,6 +1626,11 @@ namespace VRMod
         private void Awake()
         {
             own = GetComponent<Renderer>();
+        }
+
+        private void OnDestroy()
+        {
+            if (ownedMesh) Destroy(ownedMesh);
         }
 
         private void Update()
@@ -1625,7 +1681,7 @@ namespace VRMod
         internal int builtModelId;
         internal Transform sourceHandBone;
         internal int itemDisplaysAtBuild;
-        internal int inventorySumAtBuild;
+        internal int bakeSignatureAtBuild;
 
         private BepInEx.Configuration.ConfigEntry<float> rotX, rotY, rotZ, posX, posY, posZ, scale;
         private BepInEx.Configuration.ConfigEntry<float> aimRotX, aimRotY, aimRotZ;
@@ -1730,15 +1786,41 @@ namespace VRMod
         private static bool IsShielding(CharacterBody body)
         {
             if (!body) return false;
-            foreach (EntityStateMachine m in body.GetComponents<EntityStateMachine>())
+
+            // Performance: this runs every frame per hand as Enforcer. The body's state machines
+            // are fetched once per body (refreshed every couple of seconds in case one is added
+            // late) and the name test is remembered per state type, instead of a GetComponents
+            // array and three string scans per machine per frame.
+            if (!ReferenceEquals(shieldMachinesBody, body) || shieldMachines == null || Time.unscaledTime >= shieldMachinesRefreshAt)
             {
-                if (m == null || m.state == null) continue;
-                string n = m.state.GetType().Name;
-                if (n.IndexOf("Shield", StringComparison.Ordinal) >= 0 && !n.StartsWith("NotIn") && !n.Contains("Unshield"))
-                    return true;
+                shieldMachinesBody = body;
+                shieldMachines = body.GetComponents<EntityStateMachine>();
+                shieldMachinesRefreshAt = Time.unscaledTime + 2f;
+            }
+
+            for (int i = 0; i < shieldMachines.Length; i++)
+            {
+                EntityStateMachine m = shieldMachines[i];
+                if (!m || m.state == null) continue;
+
+                Type stateType = m.state.GetType();
+                bool isShieldState;
+                if (!shieldStateVerdicts.TryGetValue(stateType, out isShieldState))
+                {
+                    string n = stateType.Name;
+                    isShieldState = n.IndexOf("Shield", StringComparison.Ordinal) >= 0 && !n.StartsWith("NotIn") && !n.Contains("Unshield");
+                    shieldStateVerdicts[stateType] = isShieldState;
+                }
+
+                if (isShieldState) return true;
             }
             return false;
         }
+
+        private static CharacterBody shieldMachinesBody;
+        private static EntityStateMachine[] shieldMachines;
+        private static float shieldMachinesRefreshAt;
+        private static readonly Dictionary<Type, bool> shieldStateVerdicts = new Dictionary<Type, bool>();
 
         /// <summary>Hand mesh rotation offset from its three config angles.</summary>
         internal static Quaternion HandRotation(float x, float y, float z) => RuntimeHands.Compose(x, y, z);
@@ -1962,17 +2044,19 @@ namespace VRMod
                 bool modelChanged = liveModel && liveModel.GetInstanceID() != builtModelId;
                 bool meshGone = GetComponentsInChildren<MeshRenderer>(true).Length == 0;
 
-                // Watch the INVENTORY rather than displays on one bone: an item may hang off the
-                // forearm or chest, and we want the hand re-baked the moment anything is picked up.
-                bool itemsChanged = liveBody && RuntimeHands.InventorySum(liveBody) != inventorySumAtBuild
-                                    && Time.unscaledTime >= inventoryRebakeNotBefore;
+                // Watch every display on the MODEL rather than displays on one bone: an item may
+                // hang off the forearm or chest and still be captured by the bake. Only a change
+                // in what is attached to the model needs a re-bake - another stack of an item
+                // that is already shown does not (see BakeSourceSignature).
+                bool itemsChanged = liveBody && Time.unscaledTime >= inventoryRebakeNotBefore
+                                    && RuntimeHands.BakeSourceSignature(liveBody) != bakeSignatureAtBuild;
 
                 if ((modelChanged || meshGone || itemsChanged) && liveBody && liveBody.name.StartsWith(bodyName))
                 {
                     rebuildRequested = true;
                     string why = modelChanged ? "character model was rebuilt"
                         : meshGone ? "mesh renderers are gone"
-                        : "inventory changed";
+                        : "item displays on the model changed";
                     VRMod.StaticLogger.LogInfo($"[VR hands] Runtime hand for '{bodyName}' needs re-baking ({why}).");
                     MotionControls.SetHandPair(liveBody);
                     return;

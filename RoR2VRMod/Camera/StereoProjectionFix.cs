@@ -72,6 +72,13 @@ namespace VRMod
             // feeding this camera the headset's per-eye projection matrices.
             _childCamera.cullingMask = 0;
             _childCamera.clearFlags = CameraClearFlags.Nothing;
+            // Performance: CopyFrom also copied the scene camera's deferred rendering path and its
+            // depth texture modes, so this empty camera still set up a G-buffer, ran the deferred
+            // lighting pass and rendered depth / normals textures for both eyes every frame.
+            // Forward with no depth textures does none of that, and has no effect on the
+            // projection matrices this camera exists to provide.
+            _childCamera.renderingPath = RenderingPath.Forward;
+            _childCamera.depthTextureMode = DepthTextureMode.None;
             _childCamera.depth = -100;
             _childCamera.allowHDR = false;
             _childCamera.allowMSAA = false;

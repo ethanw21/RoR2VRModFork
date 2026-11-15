@@ -1,0 +1,73 @@
+# Automated build (GitHub Actions)
+
+`.github/workflows/build.yml` builds the mod on every push to `main`, on every pull request, and
+on demand (Actions tab, "Build", "Run workflow"). A finished run has an artifact named
+`Resurrected_VRMod-<version>-<commit>`. Downloading it gives a zip in Thunderstore layout that can
+be installed with the mod manager's "Import local mod".
+
+A pull request run has a second artifact, `Resurrected_VRMod-<version>-BASE-<commit>`: the base
+branch's source folders (`RoR2VRMod`, `VREnabler`, `VRAPI`) built with the pull request's build
+setup. If something is wrong in the game, test both. A fault that the BASE package shows too comes
+from the build setup, not from the pull request's changes to the mod.
+
+No copy of the game is involved. The build uses:
+
+| What | Where it comes from |
+|------|---------------------|
+| C# compiler | .NET SDK on the build machine (`dotnet build VRMod.sln -c Release`) |
+| Game assemblies (stripped, reference only) | `RiskOfRain2.GameLibs` on the BepInEx NuGet feed |
+| Hook definitions | `MMHOOK.RoR2` on NuGet |
+| Unity engine modules, BepInEx | `UnityEngine.Modules`, `BepInEx.Core` on NuGet |
+| XR / input libraries the mod ships | the published Thunderstore package of this mod |
+| bHaptics and Shockwave SDKs (compile time only) | embedded files inside DrBibop's original `VRPatcher.dll` |
+| Post-processing and tracked pose driver (game side) | compiled for reference from Unity's package registry |
+| Decalicious (game side) | a small reference stub, `stubs/Decalicious/Decalicious.cs` |
+
+`fetch-refs.sh` downloads and prepares everything in the last four rows into `refs/` (ignored by
+git). `package.sh` then takes the published package, puts the newly built `VRMod.dll`,
+`VRPatcher.dll` and `VRAPI.dll` in place of the published ones, and copies in this repository's
+`manifest.json`, `README.md`, `CHANGELOG.md` and `icon.png`. Every other file in the artifact is
+byte for byte the one from the published package.
+
+The Package step also compares each new DLL with the published one: which libraries it references
+and which files it embeds, by name, size and content hash (version numbers of libraries and the
+base class library are left out, see the last section). A difference shows up as a warning on the
+run. It is expected when a change adds or
+removes a dependency on purpose, and a red flag when it does not.
+
+## Things to change now and then
+
+- **Game update:** set `GameLibsVersion` and `MMHookVersion` in `Directory.Build.props` to the
+  versions that match the new game build.
+- **New published release with changed XR libraries:** nothing to do, the latest published
+  package is used. To pin one, set `TS_VERSION` in the workflow's "Fetch references" step.
+- **The mod starts using another member of a game-side assembly that has only a stub:** add the
+  member to the stub source.
+
+## Building on your own machine
+
+With the .NET SDK (8 or newer) and a bash shell (Git Bash on Windows works):
+
+```
+bash build-tools/ci/fetch-refs.sh
+dotnet build VRMod.sln -c Release
+bash build-tools/ci/package.sh
+```
+
+The package is then in `dist/package/`.
+
+## How this differs from the hand-driven build
+
+The `*.ps1` / `ubuild.py` scripts one folder up compile against a real copy of the game's
+`Managed` folder. This build compiles against stripped reference assemblies instead, so the DLLs
+are not byte-identical to a hand-driven build. Checked against the published 1.1.1 DLLs, the
+differences in what they reference are:
+
+- `netstandard 2.1` in place of `mscorlib`, `System` and `System.Core` 4.0 (the game provides
+  both; .NET Standard 2.1 is what DrBibop's original project files targeted).
+- Version numbers recorded for BepInEx, MonoMod and Mono.Cecil, which come from the
+  `BepInEx.Core` NuGet package here. These libraries are loaded by name at runtime.
+
+Every other referenced library is the same, and every embedded file (the asset bundle, the native
+OpenXR plugin and loader, the subsystems manifest) is byte for byte the published one. Test an artifact in the game
+before publishing it.

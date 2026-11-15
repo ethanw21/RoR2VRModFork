@@ -1,0 +1,3 @@
+# The published patcher embeds this file with Windows line endings; keep them so a build embeds
+# byte for byte the same file (the Package step compares embedded files with the published DLLs).
+VREnabler/Dependencies/UnitySubsystemsManifest.json text eol=crlf

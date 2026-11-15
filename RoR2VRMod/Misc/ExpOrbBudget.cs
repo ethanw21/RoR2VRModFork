@@ -21,6 +21,10 @@ namespace VRMod
 
         private static readonly Queue<float> times = new Queue<float>(MaxPerSecond + 1);
         private static readonly HashSet<ExperienceOrbBehavior> hiddenOrbs = new HashSet<ExperienceOrbBehavior>();
+        // Orbs whose renderers and lights are currently switched off. Unlike hiddenOrbs (which an
+        // orb leaves when it arrives), an orb stays in here until it is shown again, so a pooled
+        // orb that was hidden last time gets its visuals back.
+        private static readonly HashSet<ExperienceOrbBehavior> renderersOff = new HashSet<ExperienceOrbBehavior>();
         private static int skipped, shown;
         private static float nextReport;
 
@@ -39,7 +43,10 @@ namespace VRMod
                     else { show = false; skipped++; }
                     Report(t);
                 }
-                SetVisible(self, show);
+                // Performance: every orb used to get two GetComponentsInChildren scans here, also
+                // with the mode off. A visible orb only needs touching when this (pooled) orb was
+                // hidden the last time it was used.
+                if (!show || renderersOff.Contains(self)) SetVisible(self, show);
             };
             On.RoR2.ExperienceOrbBehavior.OnHitTarget += (orig, self) =>
             {
@@ -58,7 +65,8 @@ namespace VRMod
         {
             foreach (Renderer r in orb.GetComponentsInChildren<Renderer>(true)) r.enabled = visible;
             foreach (Light l in orb.GetComponentsInChildren<Light>(true)) l.enabled = visible;
-            if (visible) hiddenOrbs.Remove(orb); else hiddenOrbs.Add(orb);
+            if (visible) { hiddenOrbs.Remove(orb); renderersOff.Remove(orb); }
+            else { hiddenOrbs.Add(orb); renderersOff.Add(orb); }
         }
 
         private static void Report(float now)
@@ -68,6 +76,7 @@ namespace VRMod
                 VRMod.StaticLogger.LogInfo($"[VR perf] last {ReportInterval:0}s: {skipped} experience orb visual(s) hidden by the {MaxPerSecond}/s cap, {shown} shown (experience is still awarded).");
             skipped = shown = 0;
             hiddenOrbs.RemoveWhere(o => !o);
+            renderersOff.RemoveWhere(o => !o);
             nextReport = now + ReportInterval;
         }
     }

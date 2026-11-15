@@ -100,6 +100,11 @@ namespace VRMod
 
             float motorValue = context.CalcCamDisplacementMagnitude() * context.userVibrationScale;
 
+            // Performance: an impulse only lasts for the frame it is sent in, so there is nothing to
+            // cancel when the screen is not shaking. Without this check two device look-ups, two
+            // capability queries and two zero-strength impulses went to the runtime every frame.
+            if (motorValue <= 0.001f) return;
+
             InputDevice leftHand = InputDevices.GetDeviceAtXRNode(XRNode.LeftHand);
             InputDevice rightHand = InputDevices.GetDeviceAtXRNode(XRNode.RightHand);
 

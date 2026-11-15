@@ -37,6 +37,7 @@ namespace VRMod
         private const int ActivationRate = 100;
         private static readonly Queue<float> requests = new Queue<float>(256);
         private static readonly Dictionary<string, int> skippedNames = new Dictionary<string, int>();
+        private static readonly Dictionary<uint, int> skippedIds = new Dictionary<uint, int>();
         // 2.26.6 (user: hit/crit clicks should stay unless they reach an extreme rate):
         // these skip the normal limits and are only capped at HitSoundMaxPerSecond each.
         private static readonly HashSet<string> HitFeedbackSounds = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase)
@@ -58,28 +59,43 @@ namespace VRMod
             {
                 if (ModConfig.ReduceSoundsUnderLoad.Value && !string.IsNullOrEmpty(soundString)
                     && soundString.StartsWith("Play", System.StringComparison.OrdinalIgnoreCase)
-                    && !Allow(byName, soundString)) return 0u;
+                    && !AllowName(soundString)) return 0u;
                 return orig(soundString, gameObject);
             };
             On.RoR2.Audio.PointSoundManager.EmitSoundLocal_string_Vector3 += (orig, soundString, position) =>
             {
                 if (ModConfig.ReduceSoundsUnderLoad.Value && !string.IsNullOrEmpty(soundString)
-                    && !Allow(byName, soundString)) return 0u;
+                    && !AllowName(soundString)) return 0u;
                 return orig(soundString, position);
             };
             On.RoR2.Audio.PointSoundManager.EmitSoundLocal_AkEventIdArg_Vector3 += (orig, akEventId, position) =>
             {
                 if (ModConfig.ReduceSoundsUnderLoad.Value && akEventId.id != 0
-                    && !Allow(byId, akEventId.id)) return 0u;
+                    && !AllowId(akEventId.id)) return 0u;
                 return orig(akEventId, position);
             };
         }
 
-        private static bool Allow<T>(Dictionary<T, Queue<float>> table, T key)
+        // Performance: these two entry points replace one generic method that tested "key is
+        // string" (which boxes every numeric sound ID) and built an "id N" string for every skipped
+        // numeric sound. The limiter is busiest exactly when the game is under the most load -
+        // thousands of calls a second - so numeric IDs now stay numeric until the 10-second report.
+        private static bool AllowName(string name)
         {
             float now = Time.unscaledTime;
-            if (key is string hitName && HitFeedbackSounds.Contains(hitName))
-                return AllowHitSound(table, key, hitName, now);
+            if (HitFeedbackSounds.Contains(name))
+                return AllowHitSound(byName, name, name, now);
+            return Allow(byName, name, name, 0u, now);
+        }
+
+        private static bool AllowId(uint id)
+        {
+            return Allow(byId, id, null, id, Time.unscaledTime);
+        }
+
+        /// <param name="name">The event name, or null when the sound is identified by <paramref name="id"/>.</param>
+        private static bool Allow<T>(Dictionary<T, Queue<float>> table, T key, string name, uint id, float now)
+        {
             requests.Enqueue(now);
             while (requests.Count > 0 && now - requests.Peek() >= 1f) requests.Dequeue();
             if (requests.Count < ActivationRate)
@@ -100,9 +116,16 @@ namespace VRMod
             else
             {
                 skipped++;
-                string name = key as string ?? ("id " + key);
-                skippedNames.TryGetValue(name, out int n);
-                skippedNames[name] = n + 1;
+                if (name != null)
+                {
+                    skippedNames.TryGetValue(name, out int n);
+                    skippedNames[name] = n + 1;
+                }
+                else
+                {
+                    skippedIds.TryGetValue(id, out int n);
+                    skippedIds[id] = n + 1;
+                }
             }
             Report(now);
             return allow;
@@ -152,12 +175,14 @@ namespace VRMod
             if (skipped > 0)
             {
                 var top = new List<KeyValuePair<string, int>>(skippedNames);
+                foreach (KeyValuePair<uint, int> byIdCount in skippedIds) top.Add(new KeyValuePair<string, int>("id " + byIdCount.Key, byIdCount.Value));
                 top.Sort((a, b) => b.Value.CompareTo(a.Value));
                 var sb = new System.Text.StringBuilder();
                 for (int i = 0; i < top.Count && i < 5; i++) sb.Append(i == 0 ? "" : ", ").Append(DisplayName(top[i].Key)).Append(" x").Append(top[i].Value);
                 VRMod.StaticLogger.LogInfo($"[VR sound] last {ReportInterval:0}s: {skipped} sound(s) skipped by 'Reduce sounds under heavy load', {played} played; most skipped: {sb}.");
             }
             skippedNames.Clear();
+            skippedIds.Clear();
             if (byName.Count > 2000) byName.Clear();
             if (byId.Count > 2000) byId.Clear();
             skipped = played = 0;
