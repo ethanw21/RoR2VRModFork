@@ -19,6 +19,14 @@ concurrency:
 
 jobs:
   build:
+    # "this" is the commit that was pushed. On a pull request a second package, "base", is built
+    # from the base branch's source with this branch's build setup. It answers "was it this
+    # change, or was it already like that?" when something looks wrong in the game.
+    name: build (${{ matrix.source }})
+    strategy:
+      fail-fast: false
+      matrix:
+        source: ${{ github.event_name == 'pull_request' && fromJSON('["this", "base"]') || fromJSON('["this"]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -26,6 +34,22 @@ jobs:
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
     steps:
       - uses: actions/checkout@v5
+
+      - name: Use the base branch's source
+        if: matrix.source == 'base'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          for dir in RoR2VRMod VREnabler VRAPI; do
+            # Files this pull request adds do not exist on the base branch.
+            git diff --name-only --diff-filter=A FETCH_HEAD HEAD -- "$dir" | xargs -r rm -f
+            git checkout FETCH_HEAD -- "$dir"
+          done
+          # Keep this branch's project files: they are build setup, not mod source.
+          git checkout HEAD -- RoR2VRMod/VRMod.csproj VREnabler/VRPatcher.csproj VRAPI/VRAPI.csproj
+          echo "Source folders now match $BASE_REF at $(git rev-parse --short FETCH_HEAD)."
+          echo "BASE_SHA=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_ENV"
 
       - uses: actions/setup-dotnet@v5
         with:
@@ -42,8 +66,13 @@ jobs:
         run: |
           bash build-tools/ci/package.sh
           version="$(jq -r .version_number manifest.json)"
-          echo "name=Resurrected_VRMod-${version}-${COMMIT::7}" >> "$GITHUB_OUTPUT"
+          if [ "$SOURCE" = "base" ]; then
+            echo "name=Resurrected_VRMod-${version}-BASE-${BASE_SHA::7}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=Resurrected_VRMod-${version}-${COMMIT::7}" >> "$GITHUB_OUTPUT"
+          fi
         env:
+          SOURCE: ${{ matrix.source }}
           # On a pull request GITHUB_SHA is a temporary merge commit; name the artifact after
           # the commit that was actually pushed.
           COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
