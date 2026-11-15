@@ -93,8 +93,29 @@ internal static class Program
             lines.Add($"reference  {md.GetString(reference.Name)}  {reference.Version}");
         }
 
+        // Embedded files are listed with their size and a hash of their content: the same file
+        // name with different content (an older native OpenXR plugin, an older asset bundle) is
+        // exactly the kind of difference that only shows up in the headset.
+        var corHeader = pe.PEHeaders.CorHeader;
+        bool hasResources = corHeader != null && corHeader.ResourcesDirectory.Size != 0;
+        PEMemoryBlock resources = hasResources ? pe.GetSectionData(corHeader.ResourcesDirectory.RelativeVirtualAddress) : default;
+
         foreach (ManifestResourceHandle handle in md.ManifestResources)
-            lines.Add($"resource   {md.GetString(md.GetManifestResource(handle).Name)}");
+        {
+            ManifestResource resource = md.GetManifestResource(handle);
+            string name = md.GetString(resource.Name);
+
+            if (!hasResources || !resource.Implementation.IsNil)
+            {
+                lines.Add($"resource   {name}");
+                continue;
+            }
+
+            BlobReader reader = resources.GetReader((int)resource.Offset, resources.Length - (int)resource.Offset);
+            byte[] data = reader.ReadBytes(reader.ReadInt32());
+            string hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(data)).Substring(0, 16).ToLowerInvariant();
+            lines.Add($"resource   {name}  {data.Length} bytes, sha256 {hash}");
+        }
 
         lines.Sort(StringComparer.Ordinal);
         foreach (string line in lines) Console.WriteLine(line);

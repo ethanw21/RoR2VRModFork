@@ -19,7 +19,8 @@ TOOL="$ROOT/refs/build/_tools/ExtractResources/ExtractResources.dll"
 info() { # what a DLL depends on and embeds, without the parts that legitimately differ:
          # version numbers, and the base class library (this build targets .NET Standard, the
          # hand-driven one compiled against the game's own mscorlib).
-    dotnet "$TOOL" --info "$1" | awk '{ print $1, $2 }' | grep -Ev '^reference (mscorlib|netstandard|System(\..*)?)$' || true
+         # Embedded files keep their size and content hash.
+    dotnet "$TOOL" --info "$1" | awk '$1 == "reference" { print $1, $2; next } { print }' | grep -Ev '^reference (mscorlib|netstandard|System(\..*)?)$' || true
 }
 
 compare() { # dll name, built file
@@ -27,11 +28,11 @@ compare() { # dll name, built file
     published="$(find "$BASE" -type f -name "$1" | head -n 1 || true)"
     [ -n "$published" ] && [ -f "$TOOL" ] || return 0
     if diff <(info "$published") <(info "$2") > "$ROOT/dist/$1.diff"; then
-        echo "  $1: references the same libraries and embeds the same files as the published DLL"
+        echo "  $1: references the same libraries and embeds identical files as the published DLL"
     else
         echo "  $1: referenced libraries or embedded files DIFFER from the published DLL ('<' published, '>' this build):"
         sed 's/^/      /' "$ROOT/dist/$1.diff"
-        echo "::warning title=$1 differs from the published build::The libraries it references or the files it embeds changed. See the Package step's log."
+        echo "::warning title=$1 differs from the published build::The libraries it references or the content of the files it embeds changed. See the Package step's log."
     fi
     rm -f "$ROOT/dist/$1.diff"
 }
